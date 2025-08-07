@@ -47,7 +47,8 @@ A web-based geospatial tool for analyzing urban heat patterns in Lahore using sa
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/lahore-uhi-mapper.git
+git clone https://github.com/JakirHossainCDE/lahore-uhi-mapper.git
+
 cd lahore-uhi-mapper
 
 # Set up Python environment
