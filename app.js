@@ -2,16 +2,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize map centered on Lahore
     const map = L.map('map').setView([31.5497, 74.3436], 12);
     
+    let uhiLayer = null;
+    let mitigationLayer = null;
+
     // Define base map layers
     const baseLayers = {
         "Street Map": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         }),
         "Satellite": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-            attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+            attribution: 'Tiles &copy; Esri'
         }),
         "Topographical": L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-            attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+            attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
         }),
         "Hybrid": L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
             subdomains: ['mt0','mt1','mt2','mt3'],
@@ -66,24 +69,30 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             const response = await fetch(`/uhi-data?start_date=${startDate}&end_date=${endDate}`);
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to fetch UHI data');
+            }
             const data = await response.json();
             
             // Clear existing layers
-            if (window.uhiLayer) map.removeLayer(window.uhiLayer);
+            if (uhiLayer) map.removeLayer(uhiLayer);
             
             // Add new UHI layer
-            window.uhiLayer = L.geoJSON(data, {
+            uhiLayer = L.geoJSON(data, {
                 style: feature => ({
                     fillColor: getTemperatureColor(feature.properties.lst),
-                    weight: 1,
-                    opacity: 1,
+                    weight: 0,
+                    opacity: 0,
                     fillOpacity: 0.7
                 })
             }).addTo(map);
             
+            alert("UHI data loaded successfully!");
+            
         } catch (error) {
             console.error("Error loading UHI data:", error);
-            alert("Failed to load UHI data");
+            alert("Failed to load UHI data. " + error.message);
         }
     });
 
@@ -91,13 +100,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('show-mitigation').addEventListener('click', async () => {
         try {
             const response = await fetch('/mitigation-suggestions');
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.detail || 'Failed to fetch mitigation suggestions');
+            }
             const data = await response.json();
             
             // Clear existing layers
-            if (window.mitigationLayer) map.removeLayer(window.mitigationLayer);
+            if (mitigationLayer) map.removeLayer(mitigationLayer);
             
             // Add mitigation suggestions
-            window.mitigationLayer = L.geoJSON(data, {
+            mitigationLayer = L.geoJSON(data, {
                 pointToLayer: (feature, latlng) => {
                     return L.circleMarker(latlng, {
                         radius: 8,
@@ -107,15 +120,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         fillOpacity: 0.8
                     }).bindPopup(`
                         <b>Mitigation Suggestion</b><br>
-                        ${feature.properties.suggestion}<br>
-                        Estimated cooling: ${feature.properties.estimated_cooling}°C
+                        Suggestion: ${feature.properties.suggestion}<br>
+                        Priority: ${feature.properties.priority}
                     `);
                 }
             }).addTo(map);
+
+            alert("Mitigation suggestions loaded successfully!");
             
         } catch (error) {
             console.error("Error loading mitigation data:", error);
-            alert("Failed to load mitigation suggestions");
+            alert("Failed to load mitigation suggestions. " + error.message);
         }
     });
 
