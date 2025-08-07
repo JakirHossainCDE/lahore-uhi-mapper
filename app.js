@@ -1,11 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialize map centered on Lahore
     const map = L.map('map').setView([31.5497, 74.3436], 12);
     
     let uhiLayer = null;
     let mitigationLayer = null;
 
-    // Define base map layers
     const baseLayers = {
         "Street Map": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -22,10 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
         })
     };
 
-    // Add default base map
     baseLayers["Street Map"].addTo(map);
 
-    // Add geocoder control
     L.Control.geocoder({
         defaultMarkGeocode: false
     })
@@ -34,7 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
     })
     .addTo(map);
 
-    // Base map selector
     document.getElementById('base-map').addEventListener('change', function() {
         const selectedMap = this.value;
         Object.values(baseLayers).forEach(layer => map.removeLayer(layer));
@@ -54,7 +49,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Set default dates
     const endDate = new Date();
     const startDate = new Date();
     startDate.setMonth(endDate.getMonth() - 1);
@@ -62,24 +56,17 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('start-date').valueAsDate = startDate;
     document.getElementById('end-date').valueAsDate = endDate;
 
-    // Load UHI data
     document.getElementById('load-data').addEventListener('click', async () => {
-        const startDate = document.getElementById('start-date').value;
-        const endDate = document.getElementById('end-date').value;
-        
         try {
-            // Updated fetch URL to point to the FastAPI server
-            const response = await fetch(`http://localhost:8000/uhi-data?start_date=${startDate}&end_date=${endDate}`);
+            const response = await fetch(`http://localhost:8000/uhi-data`);
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'Failed to fetch UHI data');
             }
             const data = await response.json();
             
-            // Clear existing layers
             if (uhiLayer) map.removeLayer(uhiLayer);
             
-            // Add new UHI layer
             uhiLayer = L.geoJSON(data, {
                 style: feature => ({
                     fillColor: getTemperatureColor(feature.properties.lst),
@@ -97,10 +84,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Show mitigation areas
     document.getElementById('show-mitigation').addEventListener('click', async () => {
         try {
-            // Updated fetch URL to point to the FastAPI server
             const response = await fetch('http://localhost:8000/mitigation-suggestions');
             if (!response.ok) {
                 const errorData = await response.json();
@@ -108,10 +93,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const data = await response.json();
             
-            // Clear existing layers
             if (mitigationLayer) map.removeLayer(mitigationLayer);
             
-            // Add mitigation suggestions
             mitigationLayer = L.geoJSON(data, {
                 pointToLayer: (feature, latlng) => {
                     return L.circleMarker(latlng, {
@@ -136,7 +119,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Helper function to get color based on temperature
     function getTemperatureColor(temp) {
         if (temp > 40) return '#d7191c';
         if (temp > 35) return '#fdae61';
