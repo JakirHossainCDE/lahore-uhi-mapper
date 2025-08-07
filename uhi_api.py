@@ -7,6 +7,7 @@ from shapely.geometry import Polygon
 import numpy as np
 import json
 import os
+import rasterio.warp
 
 app = FastAPI(title="Lahore UHI Mapper API")
 
@@ -46,10 +47,10 @@ def get_uhi_data_from_rasters():
             for row, col in zip(rows, cols):
                 # Create a polygon for each pixel
                 poly_coords = [
-                    (transform * (col, row))[0],
-                    (transform * (col + 1, row))[1],
-                    (transform * (col + 1, row + 1))[0],
-                    (transform * (col, row + 1))[1]
+                    (transform * (col, row)),
+                    (transform * (col + 1, row)),
+                    (transform * (col + 1, row + 1)),
+                    (transform * (col, row + 1))
                 ]
                 polygons.append(Polygon(poly_coords))
                 values.append(lst_data[row, col])
@@ -76,12 +77,11 @@ def get_mitigation_data_from_rasters():
         lst_path = os.path.join('data', 'modis_lst.tif')
         ndvi_path = os.path.join('data', 'sentinel2_ndvi.tif')
 
-        # Read both rasters and ensure they are aligned
         with rasterio.open(lst_path) as lst_src, rasterio.open(ndvi_path) as ndvi_src:
             # Reproject NDVI to match the LST raster
             reprojected_ndvi, reprojected_transform = rasterio.warp.reproject(
                 source=rasterio.band(ndvi_src, 1),
-                destination=np.empty_like(lst_src.read(1)),
+                destination=np.empty_like(lst_src.read(1), dtype='float32'),
                 src_transform=ndvi_src.transform,
                 src_crs=ndvi_src.crs,
                 dst_transform=lst_src.transform,
