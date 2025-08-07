@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lahore Urban Heat Island Mapper</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Lahore Urban Heat Island Mapper</h1>
+            <div class="controls">
+                <div class="date-controls">
+                    <label>Start Date: <input type="date" id="start-date"></label>
+                    <label>End Date: <input type="date" id="end-date"></label>
+                    <button id="load-data">Load UHI Data</button>
+                </div>
+                <div class="layer-controls">
+                    <div class="base-map-selector">
+                        <label>Base Map:</label>
+                        <select id="base-map">
+                            <option value="satellite">Satellite</option>
+                            <option value="topo">Topographical</option>
+                            <option value="street" selected>Street Map</option>
+                            <option value="hybrid">Hybrid</option>
+                        </select>
+                    </div>
+                    <button id="show-mitigation">Show Mitigation Areas</button>
+                </div>
+            </div>
+        </header>
+        <div id="map"></div>
+        <div class="legend">
+            <h3>Temperature Legend (°C)</h3>
+            <div class="legend-gradient"></div>
+            <div class="legend-labels">
+                <span>25</span>
+                <span>30</span>
+                <span>35</span>
+                <span>40+</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
