@@ -29,16 +29,15 @@ LAHORE_BOUNDS = ee.Geometry.Rectangle([74.1472, 31.3000, 74.5500, 31.6920])
 
 def get_lst_data(start_date: str, end_date: str, cloud_cover: int = 10):
     """Calculate Land Surface Temperature from Landsat 8/9"""
-    # Filter Landsat collection
     landsat = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2') \
         .filterBounds(LAHORE_BOUNDS) \
         .filterDate(start_date, end_date) \
         .filter(ee.Filter.lt('CLOUD_COVER', cloud_cover))
     
-    # Calculate LST in Celsius
     def calculate_lst(image):
+        # Scale and convert to Celsius
         lst = image.select('ST_B10').multiply(0.00341802).add(149.0).subtract(273.15)
-        return lst.rename('LST')
+        return lst.rename('lst').copyProperties(image, ['system:time_start'])
     
     return landsat.map(calculate_lst).mean().clip(LAHORE_BOUNDS)
 
@@ -50,104 +49,92 @@ def get_ndvi_data(start_date: str, end_date: str, cloud_cover: int = 10):
         .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', cloud_cover))
     
     def calculate_ndvi(image):
-        ndvi = image.normalizedDifference(['B8', 'B4']).rename('NDVI')
-        return ndvi
+        ndvi = image.normalizedDifference(['B8', 'B4']).rename('ndvi')
+        return ndvi.copyProperties(image, ['system:time_start'])
     
     return sentinel.map(calculate_ndvi).mean().clip(LAHORE_BOUNDS)
-
-def calculate_uhi(lst_image):
-    """Calculate Urban Heat Island intensity"""
-    rural_mean = lst_image.reduceRegion(
-        reducer=ee.Reducer.mean(),
-        geometry=LAHORE_BOUNDS,
-        scale=100,
-        bestEffort=True
-    ).get('LST')
-    
-    uhi = lst_image.subtract(ee.Image.constant(rural_mean)).rename('UHI')
-    return uhi
 
 @app.get("/uhi-data")
 async def get_uhi_data(
     start_date: str = Query((datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")),
     end_date: str = Query(datetime.now().strftime("%Y-%m-%d")),
-    cloud_cover: int = Query(10),
+    cloud_cover: int = Query(10, description="Maximum cloud cover percentage"),
     resolution: int = Query(100, description="Output resolution in meters")
 ):
-    """Get UHI data from Google Earth Engine"""
+    """Get UHI data from Google Earth Engine as GeoJSON."""
     try:
-        # Get LST data
         lst_image = get_lst_data(start_date, end_date, cloud_cover)
-        ndvi_image = get_ndvi_data(start_date, end_date, cloud_cover)
-        uhi_image = calculate_uhi(lst_image)
         
-        # Create a composite image
-        composite = ee.Image.cat([lst_image, ndvi_image, uhi_image])
-        
-        # Convert to GeoJSON
-        geojson = geemap.ee_to_geojson(
-            composite,
-            LAHORE_BOUNDS,
-            resolution
+        # Check if the image is empty
+        if not lst_image.bandNames().size().getInfo():
+            raise HTTPException(status_code=404, detail="No Landsat data found for the specified date range.")
+
+        # Convert the LST image to a feature collection of polygons
+        lst_vector = lst_image.reduceToVectors(
+            geometry=LAHORE_BOUNDS,
+            scale=resolution,
+            geometryType='polygon',
+            labelProperty='lst',
+            tileScale=16
         )
+
+        # Convert the feature collection to GeoJSON
+        geojson = json.loads(lst_vector.serialize())
         
-        return {
-            "type": "FeatureCollection",
-            "features": [{
-                "type": "Feature",
-                "properties": {
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "resolution": resolution
-                },
-                "geometry": geojson
-            }]
-        }
+        return geojson
         
     except Exception as e:
+        # Log the error for debugging
+        print(f"Error in /uhi-data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/mitigation-suggestions")
 async def get_mitigation_suggestions(
-    threshold: float = Query(2.0, description="Minimum UHI intensity threshold")
+    threshold: float = Query(2.0, description="Minimum UHI intensity threshold in Celsius")
 ):
-    """Get mitigation suggestions based on UHI hotspots"""
+    """Get mitigation suggestions based on UHI hotspots."""
     try:
-        # Get recent UHI data
         end_date = datetime.now().strftime("%Y-%m-%d")
         start_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
-        uhi_image = calculate_uhi(get_lst_data(start_date, end_date))
         
-        # Identify hotspots
-        hotspots = uhi_image.gt(threshold).selfMask()
-        
-        # Convert hotspots to vectors
-        hotspots_vector = hotspots.reduceToVectors(
+        lst_image = get_lst_data(start_date, end_date)
+        ndvi_image = get_ndvi_data(start_date, end_date)
+
+        # Check for empty images
+        if not lst_image.bandNames().size().getInfo():
+             raise HTTPException(status_code=404, detail="No LST data found for mitigation analysis.")
+        if not ndvi_image.bandNames().size().getInfo():
+             raise HTTPException(status_code=404, detail="No NDVI data found for mitigation analysis.")
+
+        # Identify potential hotspot areas (high LST, low NDVI)
+        # Assuming low NDVI is < 0.2 (common for non-vegetated areas)
+        hotspots = lst_image.gt(threshold).And(ndvi_image.lt(0.2)).selfMask()
+
+        # Convert hotspots to a feature collection of points for suggestions
+        hotspot_points = hotspots.reduceToVectors(
             geometry=LAHORE_BOUNDS,
-            scale=100,
-            geometryType='polygon'
+            scale=30, # Higher resolution for better hotspot detection
+            geometryType='point',
+            tileScale=16
         )
         
-        # Get centroid of each hotspot
-        centroids = hotspots_vector.map(lambda f: f.centroid())
+        # Add properties to the points for display
+        def add_properties(feature):
+            return feature.set({
+                'suggestion': 'tree_planting',
+                'priority': 'high',
+                'estimated_cooling': '2-5' # Placeholder, needs a more complex model
+            })
+        
+        suggestions = hotspot_points.map(add_properties)
         
         # Convert to GeoJSON
-        geojson = geemap.ee_to_geojson(centroids)
+        geojson = json.loads(suggestions.serialize())
         
-        return {
-            "type": "FeatureCollection",
-            "features": [{
-                "type": "Feature",
-                "properties": {
-                    "threshold": threshold,
-                    "suggestion": "urban_greening",
-                    "priority": "high"
-                },
-                "geometry": geojson
-            }]
-        }
+        return geojson
         
     except Exception as e:
+        print(f"Error in /mitigation-suggestions: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
