@@ -68,7 +68,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const endDate = document.getElementById('end-date').value;
         
         try {
-            const response = await fetch(`/uhi-data?start_date=${startDate}&end_date=${endDate}`);
+            // Updated fetch URL to point to the FastAPI server
+            const response = await fetch(`http://localhost:8000/uhi-data?start_date=${startDate}&end_date=${endDate}`);
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'Failed to fetch UHI data');
@@ -99,7 +100,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // Show mitigation areas
     document.getElementById('show-mitigation').addEventListener('click', async () => {
         try {
-            const response = await fetch('/mitigation-suggestions');
+            // Updated fetch URL to point to the FastAPI server
+            const response = await fetch('http://localhost:8000/mitigation-suggestions');
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.detail || 'Failed to fetch mitigation suggestions');
