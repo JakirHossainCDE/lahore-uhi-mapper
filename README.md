@@ -1,6 +1,6 @@
 # 🌡️ Lahore Urban Heat Island (UHI) Mapper
 
-![App Screenshot]
+<img width="1366" height="637" alt="image" src="https://github.com/user-attachments/assets/a3dfde86-95f3-4373-bd21-00e01d8beff8" />
 
 A web-based geospatial tool for analyzing urban heat patterns in Lahore using satellite data and Google Earth Engine.
 
