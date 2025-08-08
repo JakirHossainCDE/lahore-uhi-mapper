@@ -1,133 +1,197 @@
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.middleware.cors import CORSMiddleware
-import rasterio
-import geopandas as gpd
-from shapely.geometry import Polygon
-import numpy as np
-import json
-import os
-import rasterio.warp
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize map centered on Lahore
+    const map = L.map('map').setView([31.5497, 74.3436], 12);
+    
+    // Layer references
+    let uhiLayer = null;
+    let mitigationLayer = null;
+    let legend = null;
 
-app = FastAPI(title="Lahore UHI Mapper API")
+    // Base map layers
+    const baseLayers = {
+        "Street Map": L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }),
+        "Satellite": L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Tiles &copy; Esri'
+        }),
+        "Topographical": L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }),
+        "Hybrid": L.tileLayer('https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}', {
+            subdomains: ['mt0','mt1','mt2','mt3'],
+            attribution: '&copy; Google Maps'
+        })
+    };
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    // Add default base map
+    baseLayers["Street Map"].addTo(map);
 
-# Lahore bounding box (approximate)
-LAHORE_BOUNDS = [74.1472, 31.3000, 74.5500, 31.6920]
-LAHORE_GEOM = Polygon([
-    (LAHORE_BOUNDS[0], LAHORE_BOUNDS[1]),
-    (LAHORE_BOUNDS[2], LAHORE_BOUNDS[1]),
-    (LAHORE_BOUNDS[2], LAHORE_BOUNDS[3]),
-    (LAHORE_BOUNDS[0], LAHORE_BOUNDS[3]),
-    (LAHORE_BOUNDS[0], LAHORE_BOUNDS[1])
-])
+    // Add geocoder control
+    L.Control.geocoder({
+        defaultMarkGeocode: false,
+        position: 'topright',
+        placeholder: 'Search location...',
+        errorMessage: 'Location not found.'
+    }).on('markgeocode', function(e) {
+        map.fitBounds(e.geocode.bbox);
+    }).addTo(map);
 
-def get_uhi_data_from_rasters():
-    """
-    Reads MODIS LST data from a local file, processes it, and returns it as GeoJSON.
-    Assumes a pre-downloaded 'modis_lst.tif' file exists.
-    """
-    try:
-        file_path = os.path.join('data', 'modis_lst.tif')
-        with rasterio.open(file_path) as src:
-            lst_data = src.read(1)
-            transform = src.transform
-            
-            # Convert raster to a GeoDataFrame
-            rows, cols = np.where(~np.isnan(lst_data))
-            polygons = []
-            values = []
+    // Base map selector
+    document.getElementById('base-map').addEventListener('change', function() {
+        const selectedMap = this.value;
+        Object.values(baseLayers).forEach(layer => map.removeLayer(layer));
+        baseLayers[selectedMap === 'satellite' ? "Satellite" :
+                  selectedMap === 'topo' ? "Topographical" :
+                  selectedMap === 'hybrid' ? "Hybrid" : "Street Map"].addTo(map);
+    });
 
-            for row, col in zip(rows, cols):
-                # Create a polygon for each pixel
-                poly_coords = [
-                    (transform * (col, row)),
-                    (transform * (col + 1, row)),
-                    (transform * (col + 1, row + 1)),
-                    (transform * (col, row + 1))
-                ]
-                polygons.append(Polygon(poly_coords))
-                values.append(lst_data[row, col])
+    // Set default dates (last 30 days)
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setMonth(endDate.getMonth() - 1);
+    
+    document.getElementById('start-date').valueAsDate = startDate;
+    document.getElementById('end-date').valueAsDate = endDate;
 
-            gdf = gpd.GeoDataFrame({'lst': values}, geometry=polygons, crs=src.crs)
-            
-            # Clip the GeoDataFrame to the Lahore bounds
-            lahore_gdf = gpd.GeoDataFrame(index=[0], crs='EPSG:4326', geometry=[LAHORE_GEOM])
-            gdf = gpd.overlay(gdf.to_crs('EPSG:4326'), lahore_gdf, how='intersection')
-
-            return json.loads(gdf.to_json())
-
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="MODIS LST raster file not found. Please download and place 'modis_lst.tif' in the 'data' directory.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-def get_mitigation_data_from_rasters():
-    """
-    Reads local LST and NDVI raster files, identifies hotspots, and returns them as GeoJSON.
-    Assumes 'modis_lst.tif' and 'sentinel2_ndvi.tif' are available.
-    """
-    try:
-        lst_path = os.path.join('data', 'modis_lst.tif')
-        ndvi_path = os.path.join('data', 'sentinel2_ndvi.tif')
-
-        with rasterio.open(lst_path) as lst_src, rasterio.open(ndvi_path) as ndvi_src:
-            # Reproject NDVI to match the LST raster
-            reprojected_ndvi, reprojected_transform = rasterio.warp.reproject(
-                source=rasterio.band(ndvi_src, 1),
-                destination=np.empty_like(lst_src.read(1), dtype='float32'),
-                src_transform=ndvi_src.transform,
-                src_crs=ndvi_src.crs,
-                dst_transform=lst_src.transform,
-                dst_crs=lst_src.crs,
-                resampling=rasterio.enums.Resampling.bilinear
-            )
-
-            lst_data = lst_src.read(1)
-            
-            # Identify hotspots: LST > 35°C AND NDVI < 0.2
-            hotspot_mask = (lst_data > 35) & (reprojected_ndvi < 0.2)
-            hotspot_coords = np.argwhere(hotspot_mask)
-
-            hotspot_points = []
-            transform = lst_src.transform
-            for row, col in hotspot_coords:
-                x, y = transform * (col + 0.5, row + 0.5)
-                hotspot_points.append({'lat': y, 'lon': x})
+    // Load UHI Data
+    document.getElementById('load-data').addEventListener('click', async () => {
+        const startDate = document.getElementById('start-date').value;
+        const endDate = document.getElementById('end-date').value;
         
-        # Convert points to GeoJSON
-        features = [{
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [p['lon'], p['lat']]},
-            "properties": {
-                "suggestion": "tree_planting",
-                "priority": "high",
-                "estimated_cooling": "2-5"
+        try {
+            // Show loading state
+            const loadBtn = document.getElementById('load-data');
+            loadBtn.disabled = true;
+            loadBtn.textContent = "Loading...";
+            
+            const response = await fetch(`http://localhost:8000/uhi-data?start_date=${startDate}&end_date=${endDate}`);
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to fetch UHI data');
             }
-        } for p in hotspot_points]
 
-        return {"type": "FeatureCollection", "features": features}
+            const data = await response.json();
+            
+            // Remove existing layers
+            if (uhiLayer) map.removeLayer(uhiLayer);
+            if (legend) map.removeControl(legend);
+            
+            // Process and visualize UHI data
+            uhiLayer = L.geoJSON(data, {
+                style: feature => {
+                    // Use LST value from properties or default to 25°C
+                    const lstValue = feature.properties?.LST || 25;
+                    return {
+                        fillColor: getTemperatureColor(lstValue),
+                        weight: 0.5,
+                        opacity: 1,
+                        color: 'white',
+                        fillOpacity: 0.7
+                    };
+                },
+                onEachFeature: (feature, layer) => {
+                    // Add popup with temperature info
+                    if (feature.properties?.LST) {
+                        layer.bindPopup(`
+                            <b>Temperature Information</b><br>
+                            LST: ${feature.properties.LST.toFixed(2)}°C<br>
+                            Date Range: ${feature.properties.start_date} to ${feature.properties.end_date}
+                        `);
+                    }
+                }
+            }).addTo(map);
+            
+            // Add legend
+            legend = L.control({position: 'bottomright'});
+            legend.onAdd = function() {
+                const div = L.DomUtil.create('div', 'info legend');
+                div.innerHTML = `
+                    <h4>Temperature (°C)</h4>
+                    <div class="legend-gradient"></div>
+                    <div class="legend-labels">
+                        <span>25</span>
+                        <span>30</span>
+                        <span>35</span>
+                        <span>40+</span>
+                    </div>
+                `;
+                return div;
+            };
+            legend.addTo(map);
+            
+        } catch (error) {
+            console.error("Error loading UHI data:", error);
+            alert(`Error: ${error.message}`);
+        } finally {
+            // Reset button state
+            const loadBtn = document.getElementById('load-data');
+            loadBtn.disabled = false;
+            loadBtn.textContent = "Load UHI Data";
+        }
+    });
 
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Required raster files not found. Please check the 'data' directory.")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    // Show Mitigation Areas
+    document.getElementById('show-mitigation').addEventListener('click', async () => {
+        try {
+            // Show loading state
+            const mitBtn = document.getElementById('show-mitigation');
+            mitBtn.disabled = true;
+            mitBtn.textContent = "Loading...";
+            
+            const response = await fetch('http://localhost:8000/mitigation-suggestions');
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Failed to fetch mitigation data');
+            }
 
-@app.get("/uhi-data")
-async def get_uhi_endpoint():
-    """Endpoint for UHI data."""
-    return get_uhi_data_from_rasters()
+            const data = await response.json();
+            
+            // Remove existing layer
+            if (mitigationLayer) map.removeLayer(mitigationLayer);
+            
+            // Process and visualize mitigation data
+            mitigationLayer = L.geoJSON(data, {
+                pointToLayer: (feature, latlng) => {
+                    return L.circleMarker(latlng, {
+                        radius: 8,
+                        fillColor: "#27ae60",
+                        color: "#fff",
+                        weight: 1,
+                        fillOpacity: 0.8
+                    }).bindPopup(`
+                        <b>Mitigation Suggestion</b><br>
+                        Type: ${feature.properties.suggestion || 'urban_greening'}<br>
+                        Priority: ${feature.properties.priority || 'high'}<br>
+                        UHI Threshold: ${feature.properties.threshold || 2.0}°C
+                    `);
+                }
+            }).addTo(map);
+            
+        } catch (error) {
+            console.error("Error loading mitigation data:", error);
+            alert(`Error: ${error.message}`);
+        } finally {
+            // Reset button state
+            const mitBtn = document.getElementById('show-mitigation');
+            mitBtn.disabled = false;
+            mitBtn.textContent = "Show Mitigation Areas";
+        }
+    });
 
-@app.get("/mitigation-suggestions")
-async def get_mitigation_endpoint():
-    """Endpoint for mitigation suggestions."""
-    return get_mitigation_data_from_rasters()
+    // Temperature color scale
+    function getTemperatureColor(temp) {
+        if (temp > 40) return '#d7191c';  // Extreme heat (red)
+        if (temp > 35) return '#fdae61';  // High heat (orange)
+        if (temp > 30) return '#ffffbf';  // Moderate heat (yellow)
+        if (temp > 25) return '#abdda4';  // Mild (light green)
+        return '#2b83ba';                 // Cool (blue)
+    }
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    // Add some basic error handling for the map
+    map.on('error', (e) => {
+        console.error("Map error:", e.message);
+    });
+});
