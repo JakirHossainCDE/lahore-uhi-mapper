@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from datetime import datetime, timedelta
 import rasterio
 import geopandas as gpd
 from shapely.geometry import Polygon
