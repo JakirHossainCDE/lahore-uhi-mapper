@@ -64,3 +64,8 @@ earthengine authenticate
 
 # Run the application
 uvicorn uhi_api:app --reload
+
+
+## Copyright
+© 2025 – Concept by **Amna Azeem** and **Md Jakir Hossain**.  
+Distributed under the GNU General Public License v3.0.
