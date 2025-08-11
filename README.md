@@ -38,6 +38,11 @@ A web-based geospatial tool for analyzing urban heat patterns in Lahore using sa
 | Google Earth Engine | Satellite data processing |
 | Geemap | Earth Engine to GeoJSON conversion |
 
+## Copyright
+© 2025 – Concept by **Amna Azeem** and **Md Jakir Hossain**.  
+Distributed under the GNU General Public License v3.0.
+
+
 ## 💻 Installation
 
 ### Prerequisites
@@ -66,6 +71,3 @@ earthengine authenticate
 uvicorn uhi_api:app --reload
 
 
-## Copyright
-© 2025 – Concept by **Amna Azeem** and **Md Jakir Hossain**.  
-Distributed under the GNU General Public License v3.0.
